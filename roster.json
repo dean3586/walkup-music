@@ -1,0 +1,96 @@
+[
+  {
+    "number": 5,
+    "firstName": "Adrian",
+    "lastName": "Stevanovic",
+    "announcement": "audio/announcements/05-stevanovic.mp3",
+    "walkup": null
+  },
+  {
+    "number": 19,
+    "firstName": "Alexander",
+    "lastName": "Fiume",
+    "announcement": "audio/announcements/19-fiume.mp3",
+    "walkup": {
+      "file": "audio/walkups/19-fiume.mp3",
+      "startTime": 0
+    }
+  },
+  {
+    "number": 7,
+    "firstName": "Axel",
+    "lastName": "Pettengell",
+    "announcement": "audio/announcements/07-pettengell.mp3",
+    "walkup": null
+  },
+  {
+    "number": 35,
+    "firstName": "Connor",
+    "lastName": "Nascimento",
+    "announcement": "audio/announcements/35-nascimento.mp3",
+    "walkup": null
+  },
+  {
+    "number": 9,
+    "firstName": "Devin",
+    "lastName": "Sen",
+    "announcement": "audio/announcements/09-sen.mp3",
+    "walkup": null
+  },
+  {
+    "number": 17,
+    "firstName": "Emmett",
+    "lastName": "Pitton",
+    "announcement": "audio/announcements/17-pitton.mp3",
+    "walkup": null
+  },
+  {
+    "number": 10,
+    "firstName": "Everett",
+    "lastName": "Funston",
+    "announcement": "audio/announcements/10-funston.mp3",
+    "walkup": null
+  },
+  {
+    "number": 14,
+    "firstName": "Gregory",
+    "lastName": "Stratigopoulos",
+    "announcement": "audio/announcements/14-stratigopoulos.mp3",
+    "walkup": null
+  },
+  {
+    "number": 36,
+    "firstName": "James",
+    "lastName": "Reason",
+    "announcement": "audio/announcements/36-reason.mp3",
+    "walkup": null
+  },
+  {
+    "number": 99,
+    "firstName": "Lincoln",
+    "lastName": "Shamliyan Bowen",
+    "announcement": "audio/announcements/99-shamliyan-bowen.mp3",
+    "walkup": null
+  },
+  {
+    "number": 15,
+    "firstName": "Ozzy",
+    "lastName": "Day",
+    "announcement": "audio/announcements/15-day.mp3",
+    "walkup": null
+  },
+  {
+    "number": 12,
+    "firstName": "Ryder",
+    "lastName": "Varrik",
+    "announcement": "audio/announcements/12-varrik.mp3",
+    "walkup": null
+  },
+  {
+    "number": 78,
+    "firstName": "William",
+    "lastName": "Manz",
+    "announcement": "audio/announcements/78-manz.mp3",
+    "walkup": null
+  }
+]
