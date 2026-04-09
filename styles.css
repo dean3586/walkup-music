@@ -588,21 +588,44 @@ nav {
   margin-left: auto;
 }
 
-/* Transport controls — prev/play/next always centered */
+/* Next Batter — big tap target */
+#next-batter-btn {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--dur-m) var(--ease);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 8px;
+  min-height: 56px;
+}
+
+#next-batter-btn:hover:not(:disabled) {
+  background: #ffb340;
+  box-shadow: 0 4px 20px rgba(244, 160, 32, 0.3);
+}
+
+#next-batter-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+#next-batter-btn:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+/* Transport controls — prev/play/next centered */
 #transport {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  margin-bottom: 6px;
-}
-
-#volume-control {
-  justify-self: end;
-}
-
-#stop-btn {
-  justify-self: start;
 }
 
 .transport-btn {
@@ -656,44 +679,7 @@ nav {
   opacity: 0.3;
 }
 
-.transport-btn.stop {
-  color: #ff4d4d;
-}
 
-.transport-btn.stop:hover:not(:disabled) {
-  background: var(--red-soft);
-  color: #ff6666;
-}
-
-#volume-control {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.volume-icon {
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-
-#volume-slider {
-  width: 56px;
-  height: 3px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  outline: none;
-}
-
-#volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--text-primary);
-  cursor: pointer;
-}
 
 /* ==============================
    EMPTY STATE

@@ -32,10 +32,9 @@
   const prevBtn = document.getElementById('prev-btn');
   const playPauseBtn = document.getElementById('play-pause-btn');
   const nextBtn = document.getElementById('next-btn');
-  const stopBtn = document.getElementById('stop-btn');
+  const nextBatterBtn = document.getElementById('next-batter-btn');
   const playIcon = document.getElementById('play-icon');
   const pauseIcon = document.getElementById('pause-icon');
-  const volumeSlider = document.getElementById('volume-slider');
   const progressFill = document.getElementById('progress-fill');
   const timeCurrent = document.getElementById('time-current');
   const timeTotal = document.getElementById('time-total');
@@ -255,15 +254,16 @@
 
     if (newIdx !== dragIdx && newIdx >= 0) {
       const [moved] = lineup.splice(dragIdx, 1);
-      if (dragIdx < newIdx) newIdx--;
       lineup.splice(newIdx, 0, moved);
 
+      // Recalculate current batter position after the move
       if (currentBatterIdx === dragIdx) {
         currentBatterIdx = newIdx;
-      } else if (dragIdx < currentBatterIdx && newIdx >= currentBatterIdx) {
-        currentBatterIdx--;
-      } else if (dragIdx > currentBatterIdx && newIdx <= currentBatterIdx) {
-        currentBatterIdx++;
+      } else {
+        // Removal shifts indices down above dragIdx
+        if (currentBatterIdx > dragIdx) currentBatterIdx--;
+        // Insertion shifts indices up at and above newIdx
+        if (currentBatterIdx >= newIdx) currentBatterIdx++;
       }
 
       saveLineup();
@@ -358,7 +358,7 @@
         if (!player || !player.walkup) return;
 
         stopPlayback(false);
-        const vol = volumeSlider.value / 100;
+        const vol = 1;
         walkupAudio.src = player.walkup.file;
         walkupAudio.volume = vol;
         walkupAudio.currentTime = player.walkup.startTime || 0;
@@ -398,8 +398,6 @@
 
   // === Transport controls ===
   function setupControls() {
-    stopBtn.addEventListener('click', () => stopPlayback(true));
-
     playPauseBtn.addEventListener('click', () => {
       if (!currentPlayer || !playbackPhase) {
         // If lineup has players, start from current or first
@@ -437,7 +435,7 @@
       }
     });
 
-    nextBtn.addEventListener('click', () => {
+    function advanceBatter() {
       if (lineup.length === 0) return;
       currentBatterIdx = (currentBatterIdx + 1) % lineup.length;
       const num = lineup[currentBatterIdx];
@@ -446,13 +444,10 @@
         playPlayer(player);
         renderLineup();
       }
-    });
+    }
 
-    volumeSlider.addEventListener('input', () => {
-      const vol = volumeSlider.value / 100;
-      announcementAudio.volume = vol;
-      walkupAudio.volume = vol;
-    });
+    nextBtn.addEventListener('click', advanceBatter);
+    nextBatterBtn.addEventListener('click', advanceBatter);
 
     clearLineupBtn.addEventListener('click', () => {
       lineup = [];
@@ -482,8 +477,8 @@
 
     prevBtn.disabled = !hasLineup;
     nextBtn.disabled = !hasLineup;
+    nextBatterBtn.disabled = !hasLineup;
     playPauseBtn.disabled = !hasLineup && !isPlaying;
-    stopBtn.disabled = !isPlaying;
 
     playbackBar.classList.toggle('active', isPlaying);
   }
@@ -507,7 +502,7 @@
     updatePlayPauseIcon();
     updateTransportState();
 
-    const vol = volumeSlider.value / 100;
+    const vol = 1;
     announcementAudio.src = player.announcement;
     announcementAudio.volume = vol;
     announcementAudio.currentTime = 0;
@@ -526,7 +521,7 @@
     playbackStatus.textContent = 'Walk-up';
     updatePlayPauseIcon();
 
-    const vol = volumeSlider.value / 100;
+    const vol = 1;
     const startTime = player.walkup.startTime || 0;
     const duration = player.walkup.duration || globalDuration;
 
