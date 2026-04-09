@@ -35,7 +35,7 @@
   const prevBtn = document.getElementById('prev-btn');
   const playPauseBtn = document.getElementById('play-pause-btn');
   const nextBtn = document.getElementById('next-btn');
-  const stopBatterBtn = document.getElementById('stop-batter-btn');
+  const batterBtn = document.getElementById('batter-btn');
   const playIcon = document.getElementById('play-icon');
   const pauseIcon = document.getElementById('pause-icon');
   const progressFill = document.getElementById('progress-fill');
@@ -447,12 +447,13 @@
     }
 
     nextBtn.addEventListener('click', advanceBatter);
-    stopBatterBtn.addEventListener('click', () => {
-      stopPlayback(true);
-      // Advance to next batter so the next play/next-btn starts the right player
-      if (lineup.length > 0) {
-        currentBatterIdx = (currentBatterIdx + 1) % lineup.length;
-        renderLineup();
+    batterBtn.addEventListener('click', () => {
+      if (playbackPhase) {
+        // Currently playing — just stop, don't advance
+        stopPlayback(true);
+      } else {
+        // Not playing — advance and play
+        advanceBatter();
       }
     });
 
@@ -486,7 +487,8 @@
 
     prevBtn.disabled = !hasLineup;
     nextBtn.disabled = !hasLineup;
-    stopBatterBtn.disabled = !isPlaying;
+    batterBtn.disabled = !hasLineup;
+    batterBtn.textContent = isPlaying ? 'Stop Batter' : 'Next Batter';
     playPauseBtn.disabled = !hasLineup && !isPlaying;
 
     playbackBar.classList.toggle('active', isPlaying);
@@ -555,7 +557,10 @@
     fadeIn(walkupAudio, 0.15, 1, 1000);
 
     if (duration && duration > 0) {
-      const fadeStart = (duration - 2) * 1000;
+      // Song has been playing since the announcement started — calculate remaining time
+      const alreadyPlayed = walkupAudio.currentTime - startTime;
+      const remaining = duration - alreadyPlayed;
+      const fadeStart = (remaining - 2) * 1000;
       setTimeout(() => {
         if (playbackPhase === 'walkup' && currentPlayer === player && !isPaused) {
           fadeOut(walkupAudio, 2000, () => finishPlayback());

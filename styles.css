@@ -46,29 +46,17 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
   background: var(--bg);
   color: var(--text-primary);
-  min-height: 100dvh;
-  overflow-x: hidden;
-  padding-bottom: 120px;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* === Header === */
 header {
   padding: max(env(safe-area-inset-top, 20px), 20px) var(--safe) 0;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  flex-shrink: 0;
   background: var(--bg);
-}
-
-header::after {
-  content: '';
-  position: absolute;
-  bottom: -24px;
-  left: 0;
-  right: 0;
-  height: 24px;
-  background: linear-gradient(var(--bg), transparent);
-  pointer-events: none;
 }
 
 header h1 {
@@ -110,6 +98,12 @@ nav {
   height: 2px;
   background: var(--accent);
   border-radius: 1px;
+}
+
+main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* === Views === */
@@ -330,8 +324,9 @@ nav {
 }
 
 .lineup-item.current {
-  border-color: rgba(0, 166, 81, 0.25);
-  background: var(--green-soft);
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 13px 13px 13px 5px; /* compensate for thicker border */
 }
 
 /* Drag handle */
@@ -522,15 +517,9 @@ nav {
    PLAYBACK BAR — Apple Music style
    ============================== */
 #playback-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(8, 10, 18, 0.92);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  flex-shrink: 0;
+  background: rgba(8, 10, 18, 0.95);
   border-top: 1px solid var(--border);
-  z-index: 200;
 }
 
 #progress-bar {
@@ -598,7 +587,7 @@ nav {
 }
 
 /* Next Batter — big tap target */
-#stop-batter-btn {
+#batter-btn {
   width: 100%;
   padding: 16px;
   border: none;
@@ -615,16 +604,16 @@ nav {
   min-height: 56px;
 }
 
-#stop-batter-btn:hover:not(:disabled) {
+#batter-btn:hover:not(:disabled) {
   background: #ffb340;
   box-shadow: 0 4px 20px rgba(244, 160, 32, 0.3);
 }
 
-#stop-batter-btn:active:not(:disabled) {
+#batter-btn:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-#stop-batter-btn:disabled {
+#batter-btn:disabled {
   opacity: 0.2;
   cursor: default;
 }
