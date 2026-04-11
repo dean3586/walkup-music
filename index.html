@@ -43,7 +43,7 @@
         <h3>Playback Duration</h3>
         <p class="settings-desc">How long walk-up songs play before fading out (seconds).</p>
         <div class="settings-row">
-          <input type="range" id="global-duration" min="5" max="60" value="30" step="5">
+          <input type="range" id="global-duration" min="5" max="30" value="30" step="5">
           <span id="global-duration-label" class="settings-value">30s</span>
         </div>
       </div>
@@ -62,8 +62,11 @@
     </div>
     <div id="playback-main">
       <div id="playback-info">
-        <span id="playback-number"></span>
-        <span id="playback-name">No player selected</span>
+        <img id="playback-art" class="playback-art hidden" src="" alt="">
+        <div id="playback-text">
+          <div id="playback-primary"><span id="playback-number"></span> <span id="playback-name">No player selected</span></div>
+          <div id="playback-song-name" class="hidden"></div>
+        </div>
         <span id="playback-status"></span>
         <span id="playback-timer"><span id="time-current">--:--</span> / <span id="time-total">--:--</span></span>
         <button id="expand-btn" aria-label="Expand">
@@ -88,6 +91,40 @@
     </div>
   </div>
 
+  <div id="confirm-modal" class="hidden">
+    <div id="confirm-backdrop"></div>
+    <div id="confirm-box">
+      <div id="confirm-message"></div>
+      <div id="confirm-actions">
+        <button id="confirm-cancel">Cancel</button>
+        <button id="confirm-ok">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="search-modal" class="hidden">
+    <div id="search-modal-backdrop"></div>
+    <div id="search-modal-content">
+      <div id="search-modal-header">
+        <div>
+          <div id="search-modal-title">Find a Walk-Up Song</div>
+          <div id="search-player-label"></div>
+        </div>
+        <button id="search-close" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="search-input-wrap">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search songs, artists..." autocomplete="off" autocorrect="off" spellcheck="false">
+      </div>
+      <div id="search-results">
+        <div class="search-empty">Search for a song above</div>
+      </div>
+      <div id="search-powered-by">Powered by Deezer</div>
+    </div>
+  </div>
+
   <div id="now-playing" class="hidden">
     <button id="collapse-btn" aria-label="Collapse">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -100,6 +137,10 @@
     <div id="np-batter">
       <div id="np-number"></div>
       <div id="np-name"></div>
+      <div id="np-song-line" class="hidden">
+        <img id="np-art" class="np-art" src="" alt="">
+        <span id="np-song-name"></span>
+      </div>
     </div>
 
     <div id="np-progress">

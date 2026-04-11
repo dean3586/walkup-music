@@ -28,6 +28,8 @@
   // === Audio cache ===
   const objectUrlCache = {};   // playerNumber -> object URL for uploaded blob
   const audioBufferCache = {}; // playerNumber -> decoded AudioBuffer (for waveform)
+  let searchPlayerNumber = null; // player number currently searching for
+  let searchPreviewAudio = null; // audio element for previewing search results
 
   // === DOM refs ===
   const rosterView = document.getElementById('roster-view');
@@ -71,7 +73,11 @@
   const npPauseIcon = document.getElementById('np-pause-icon');
   const npBatterBtn = document.getElementById('np-batter-btn');
   const npCurrentLabel = document.getElementById('np-current-label');
+  const npArt = document.getElementById('np-art');
+  const npSongName = document.getElementById('np-song-name');
   const npNextBatter = document.getElementById('np-next-batter');
+  const playbackArt = document.getElementById('playback-art');
+  const playbackSongName = document.getElementById('playback-song-name');
 
   // === IndexedDB for uploaded audio files ===
   const DB_NAME = 'walkup-audio';
@@ -152,6 +158,304 @@
     }
   }
 
+  // === Deezer Search ===
+  let searchDebounceTimer = null;
+
+  async function searchDeezer(query) {
+    if (!query || query.length < 2) return [];
+    try {
+      const resp = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=12&output=jsonp`);
+      // Deezer doesn't support CORS for search, use JSONP-style workaround
+      // Actually, let's try with a CORS proxy approach or direct fetch
+      const data = await resp.json();
+      return data.data || [];
+    } catch (e) {
+      // Fallback: use JSONP
+      return searchDeezerJsonp(query);
+    }
+  }
+
+  function searchDeezerJsonp(query) {
+    return new Promise((resolve) => {
+      const cbName = '_deezerCb' + Date.now();
+      const script = document.createElement('script');
+      script.src = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=12&output=jsonp&callback=${cbName}`;
+      window[cbName] = (data) => {
+        resolve(data.data || []);
+        delete window[cbName];
+        script.remove();
+      };
+      script.onerror = () => {
+        resolve([]);
+        delete window[cbName];
+        script.remove();
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  function openSearchModal(playerNumber) {
+    searchPlayerNumber = playerNumber;
+    const player = roster.find(p => p.number === playerNumber);
+    const modal = document.getElementById('search-modal');
+    const input = document.getElementById('search-input');
+    const playerLabel = document.getElementById('search-player-label');
+    const results = document.getElementById('search-results');
+
+    playerLabel.textContent = `#${player.number} ${player.firstName} ${player.lastName}`;
+    input.value = '';
+    results.innerHTML = '<div class="search-empty">Search for a song above</div>';
+    modal.classList.remove('hidden');
+    setTimeout(() => input.focus(), 100);
+
+    // Stop any preview audio
+    if (searchPreviewAudio) {
+      searchPreviewAudio.pause();
+      searchPreviewAudio = null;
+    }
+  }
+
+  function closeSearchModal() {
+    const modal = document.getElementById('search-modal');
+    modal.classList.add('hidden');
+    searchPlayerNumber = null;
+    if (searchPreviewAudio) {
+      searchPreviewAudio.pause();
+      searchPreviewAudio = null;
+    }
+  }
+
+  function renderSearchResults(tracks) {
+    const results = document.getElementById('search-results');
+    if (tracks.length === 0) {
+      results.innerHTML = '<div class="search-empty">No results found</div>';
+      return;
+    }
+
+    results.innerHTML = '';
+    tracks.forEach(track => {
+      const item = document.createElement('div');
+      item.className = 'search-result';
+      const albumArt = track.album?.cover_medium || track.album?.cover_small || '';
+      item.innerHTML = `
+        <img class="search-result-art" src="${albumArt}" alt="" loading="lazy">
+        <div class="search-result-info">
+          <div class="search-result-title">${escapeHtml(track.title_short || track.title)}</div>
+          <div class="search-result-artist">${escapeHtml(track.artist?.name || 'Unknown')}</div>
+        </div>
+        <button class="search-result-preview" data-preview="${track.preview || ''}" title="Preview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        </button>
+        <button class="search-result-select" data-id="${track.id}" title="Use this song">Use</button>
+      `;
+      results.appendChild(item);
+    });
+
+    // Preview buttons
+    results.querySelectorAll('.search-result-preview').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = btn.dataset.preview;
+        if (!url) return;
+
+        // Toggle preview
+        if (searchPreviewAudio && searchPreviewAudio.src === url && !searchPreviewAudio.paused) {
+          searchPreviewAudio.pause();
+          btn.classList.remove('previewing');
+          return;
+        }
+
+        // Stop any existing preview
+        if (searchPreviewAudio) searchPreviewAudio.pause();
+        results.querySelectorAll('.previewing').forEach(b => b.classList.remove('previewing'));
+
+        searchPreviewAudio = new Audio(url);
+        searchPreviewAudio.play().catch(() => {});
+        btn.classList.add('previewing');
+        searchPreviewAudio.addEventListener('ended', () => btn.classList.remove('previewing'));
+      });
+    });
+
+    // Select buttons
+    results.querySelectorAll('.search-result-select').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const trackId = btn.dataset.id;
+        const track = tracks.find(t => String(t.id) === trackId);
+        if (!track || !track.preview) return;
+        if (!searchPlayerNumber) return;
+
+        btn.textContent = '...';
+        btn.disabled = true;
+
+        try {
+          await assignDeezerTrack(searchPlayerNumber, track);
+          closeSearchModal();
+          renderRoster();
+          renderSettings();
+          renderAllWaveforms();
+        } catch (err) {
+          btn.textContent = 'Use';
+          btn.disabled = false;
+          alert('Failed to save song: ' + err.message);
+        }
+      });
+    });
+  }
+
+  async function assignDeezerTrack(playerNumber, track) {
+    const player = roster.find(p => p.number === playerNumber);
+    if (!player) return;
+
+    // Download the preview MP3 and store in IndexedDB
+    const resp = await fetch(track.preview);
+    const blob = await resp.blob();
+    await saveAudioFile(playerNumber, blob);
+
+    // Revoke old URL
+    if (objectUrlCache[playerNumber]) {
+      URL.revokeObjectURL(objectUrlCache[playerNumber]);
+    }
+
+    const url = URL.createObjectURL(blob);
+    objectUrlCache[playerNumber] = url;
+
+    if (!player.walkup) {
+      player.walkup = { startTime: 0 };
+    } else if (player.walkup.file && !player._originalFile && !player._isUploaded) {
+      player._originalFile = player.walkup.file;
+    }
+    player.walkup.file = url;
+    player._isUploaded = true;
+    player._deezerTrack = {
+      title: track.title_short || track.title,
+      artist: track.artist?.name || '',
+      art: track.album?.cover_medium || track.album?.cover_small || '',
+      artLarge: track.album?.cover_xl || track.album?.cover_big || track.album?.cover_medium || '',
+    };
+
+    // Persist deezer track info
+    saveDeezerInfo();
+    delete audioBufferCache[playerNumber];
+  }
+
+  function saveDeezerInfo() {
+    const info = {};
+    roster.forEach(p => {
+      if (p._deezerTrack) info[p.number] = p._deezerTrack;
+    });
+    localStorage.setItem('walkup-deezer-info', JSON.stringify(info));
+  }
+
+  function loadDeezerInfo() {
+    const saved = localStorage.getItem('walkup-deezer-info');
+    if (!saved) return;
+    try {
+      const info = JSON.parse(saved);
+      roster.forEach(p => {
+        if (info[p.number]) p._deezerTrack = info[p.number];
+      });
+    } catch (e) {}
+  }
+
+  function showConfirm(message, okLabel = 'Remove') {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('confirm-modal');
+      const msgEl = document.getElementById('confirm-message');
+      const okBtn = document.getElementById('confirm-ok');
+      const cancelBtn = document.getElementById('confirm-cancel');
+      const backdrop = document.getElementById('confirm-backdrop');
+
+      msgEl.innerHTML = message;
+      okBtn.textContent = okLabel;
+      modal.classList.remove('hidden');
+
+      function cleanup(result) {
+        modal.classList.add('hidden');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        backdrop.removeEventListener('click', onCancel);
+        resolve(result);
+      }
+
+      function onOk() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      backdrop.addEventListener('click', onCancel);
+    });
+  }
+
+  // === Dynamic color from album art ===
+  function extractDominantColor(imgSrc) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 40; // small sample
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, size, size);
+        try {
+          const data = ctx.getImageData(0, 0, size, size).data;
+          let r = 0, g = 0, b = 0, count = 0;
+          // Sample pixels, skipping very dark and very light ones
+          for (let i = 0; i < data.length; i += 16) { // every 4th pixel
+            const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+            const brightness = (pr + pg + pb) / 3;
+            if (brightness > 30 && brightness < 220) {
+              // Weight more saturated colors higher
+              const max = Math.max(pr, pg, pb);
+              const min = Math.min(pr, pg, pb);
+              const saturation = max === 0 ? 0 : (max - min) / max;
+              const weight = 1 + saturation * 3;
+              r += pr * weight;
+              g += pg * weight;
+              b += pb * weight;
+              count += weight;
+            }
+          }
+          if (count > 0) {
+            r = Math.round(r / count);
+            g = Math.round(g / count);
+            b = Math.round(b / count);
+            resolve({ r, g, b });
+          } else {
+            resolve({ r: 40, g: 40, b: 60 }); // fallback
+          }
+        } catch (e) {
+          resolve({ r: 40, g: 40, b: 60 }); // CORS or other error
+        }
+      };
+      img.onerror = () => resolve({ r: 40, g: 40, b: 60 });
+      img.src = imgSrc;
+    });
+  }
+
+  async function applyAlbumBackground(imgSrc) {
+    if (!imgSrc) {
+      nowPlaying.style.background = '';
+      return;
+    }
+    const c = await extractDominantColor(imgSrc);
+    // Create a dark, subtle gradient using the dominant color
+    nowPlaying.style.background = `
+      radial-gradient(circle at 50% 25%, rgba(${c.r}, ${c.g}, ${c.b}, 0.35) 0%, transparent 70%),
+      radial-gradient(circle at 30% 80%, rgba(${c.r}, ${c.g}, ${c.b}, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 60%, rgba(${c.r}, ${c.g}, ${c.b}, 0.1) 0%, transparent 40%),
+      var(--bg)
+    `;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // === Wake Lock ===
   async function acquireWakeLock() {
     try {
@@ -185,6 +489,7 @@
     roster.sort((a, b) => a.number - b.number);
 
     await loadUploadedAudio();
+    loadDeezerInfo();
 
     const saved = localStorage.getItem('walkup-lineup');
     if (saved) {
@@ -488,30 +793,40 @@
 
       const startTime = hasWalkup ? (player.walkup.startTime || 0) : 0;
 
+      const dz = player._deezerTrack;
+      const songInfo = dz
+        ? `<div class="song-info"><img class="song-info-art" src="${dz.art}" alt="">${escapeHtml(dz.title)} — ${escapeHtml(dz.artist)}</div>`
+        : (hasWalkup ? '<div class="song-info song-info-file">Uploaded MP3</div>' : '');
+
       row.innerHTML = `
         <div class="song-setting-header">
           <div class="song-setting-player">
             <span class="song-setting-number">#${player.number}</span>
             <span class="song-setting-name">${player.firstName} ${player.lastName}</span>
           </div>
-          <div class="song-setting-control">
-            ${hasWalkup ? `
-              <button class="start-time-btn minus" data-number="${player.number}">-</button>
-              <span class="start-time-value" data-number="${player.number}">${formatTime(startTime)}</span>
-              <button class="start-time-btn plus" data-number="${player.number}">+</button>
-            ` : ''}
-            <button class="start-time-preview" data-number="${player.number}" title="Preview">&#9654;</button>
+          <div class="song-setting-actions">
+            <button class="search-song-btn" data-number="${player.number}">Search</button>
             ${player._isUploaded ? `
-              <button class="remove-upload-btn" data-number="${player.number}" title="Remove uploaded song">&#10005;</button>
+              <button class="remove-upload-btn" data-number="${player.number}" title="Remove song">&#10005;</button>
             ` : ''}
           </div>
         </div>
+        ${songInfo}
+        ${hasWalkup ? `
+          <div class="song-setting-control">
+            <label class="song-setting-label">Start</label>
+            <button class="start-time-btn minus" data-number="${player.number}">-</button>
+            <span class="start-time-value" data-number="${player.number}">${formatTime(startTime)}</span>
+            <button class="start-time-btn plus" data-number="${player.number}">+</button>
+            <button class="start-time-preview" data-number="${player.number}" title="Preview">&#9654;</button>
+          </div>
+        ` : ''}
         <div class="waveform-container" data-number="${player.number}">
           ${hasWalkup
             ? `<canvas class="waveform-canvas" data-number="${player.number}"></canvas>
                <div class="waveform-marker" data-number="${player.number}"></div>
                <div class="waveform-overlay">Drop MP3 to replace</div>`
-            : `<div class="waveform-empty">Drop an MP3 here to assign a walk-up song</div>`}
+            : `<div class="waveform-empty">Drop MP3 or use Search above</div>`}
         </div>
       `;
 
@@ -557,7 +872,10 @@
         const num = parseInt(btn.dataset.number);
         const player = roster.find(p => p.number === num);
         if (!player) return;
-        if (!confirm(`Remove uploaded walk-up song for #${player.number} ${player.firstName} ${player.lastName}?`)) return;
+        const ok = await showConfirm(
+          `Remove walk-up song for<br><strong>#${player.number} ${player.firstName} ${player.lastName}</strong>?`
+        );
+        if (!ok) return;
 
         try {
           await deleteUploadedAudio(player);
@@ -570,9 +888,14 @@
       });
     });
 
-    // Wire up waveform clicks (set start time)
+    // Wire up search buttons
+    songSettingsList.querySelectorAll('.search-song-btn').forEach(btn => {
+      btn.addEventListener('click', () => openSearchModal(parseInt(btn.dataset.number)));
+    });
+
+    // Wire up waveform click-and-drag (set start time)
     songSettingsList.querySelectorAll('.waveform-canvas').forEach(canvas => {
-      canvas.addEventListener('click', (e) => {
+      function setStartFromEvent(e, clientX) {
         const num = parseInt(canvas.dataset.number);
         const player = roster.find(p => p.number === num);
         if (!player || !player.walkup) return;
@@ -580,7 +903,7 @@
         if (!buf) return;
 
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
+        const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
         const pct = x / rect.width;
         player.walkup.startTime = Math.round(pct * buf.duration);
 
@@ -589,7 +912,30 @@
 
         updateWaveformMarker(num);
         saveStartTimes();
+      }
+
+      // Mouse drag
+      canvas.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        setStartFromEvent(e, e.clientX);
+        function onMove(ev) { setStartFromEvent(ev, ev.clientX); }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
       });
+
+      // Touch drag
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        setStartFromEvent(e, e.touches[0].clientX);
+      }, { passive: false });
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        setStartFromEvent(e, e.touches[0].clientX);
+      }, { passive: false });
     });
   }
 
@@ -633,11 +979,11 @@
       }
     }
 
-    drawWaveform(canvas, buffer);
+    drawWaveform(canvas, buffer, player.number);
     updateWaveformMarker(player.number);
   }
 
-  function drawWaveform(canvas, buffer) {
+  function drawWaveform(canvas, buffer, playerNumber) {
     const dpr = window.devicePixelRatio || 1;
     const cssWidth = canvas.offsetWidth || canvas.parentElement.offsetWidth || 300;
     const cssHeight = 60;
@@ -655,7 +1001,14 @@
     const samplesPerBar = Math.floor(channelData.length / bars);
     const midY = cssHeight / 2;
 
-    ctx.fillStyle = 'rgba(251, 252, 255, 0.35)';
+    // Compute playback region
+    const player = roster.find(p => p.number === playerNumber);
+    const startTime = player?.walkup?.startTime || 0;
+    const effectiveDur = getEffectiveWalkupDuration(player);
+    const endTime = startTime + effectiveDur;
+    const startBar = Math.floor((startTime / buffer.duration) * bars);
+    const endBar = Math.floor((endTime / buffer.duration) * bars);
+
     for (let i = 0; i < bars; i++) {
       let max = 0;
       const start = i * samplesPerBar;
@@ -665,6 +1018,13 @@
         if (v > max) max = v;
       }
       const h = Math.max(1, max * cssHeight * 0.9);
+
+      // Bars in playback region are bright, others are dim
+      if (i >= startBar && i < endBar) {
+        ctx.fillStyle = 'rgba(244, 160, 32, 0.6)';
+      } else {
+        ctx.fillStyle = 'rgba(251, 252, 255, 0.15)';
+      }
       ctx.fillRect(i * 3, midY - h / 2, 2, h);
     }
   }
@@ -680,6 +1040,10 @@
 
     const pct = ((player.walkup.startTime || 0) / buf.duration) * 100;
     marker.style.left = pct + '%';
+
+    // Redraw waveform to update the highlighted playback region
+    const canvas = songSettingsList.querySelector(`.waveform-canvas[data-number="${playerNumber}"]`);
+    if (canvas) drawWaveform(canvas, buf, playerNumber);
   }
 
   // === Drag-and-drop file upload ===
@@ -742,12 +1106,25 @@
   }
 
   // === Playback ===
+  function getEffectiveWalkupDuration(player) {
+    if (!player || !player.walkup) return 0;
+    const startTime = player.walkup.startTime || 0;
+    const configuredDur = player.walkup.duration || globalDuration;
+    // If we know the audio file length, cap to what's available
+    const buf = audioBufferCache[player.number];
+    if (buf) {
+      const available = buf.duration - startTime;
+      return Math.max(0, Math.min(configuredDur, available));
+    }
+    return configuredDur;
+  }
+
   function getTotalDuration() {
     if (!currentPlayer) return 0;
     const annDur = (announcementAudio.duration && isFinite(announcementAudio.duration))
       ? announcementAudio.duration : 3;
     if (!currentPlayer.walkup) return annDur;
-    const walkupDur = currentPlayer.walkup.duration || globalDuration;
+    const walkupDur = getEffectiveWalkupDuration(currentPlayer);
     return Math.max(annDur, walkupDur);
   }
 
@@ -820,9 +1197,10 @@
       }
     });
 
-    clearLineupBtn.addEventListener('click', () => {
+    clearLineupBtn.addEventListener('click', async () => {
       if (lineup.length === 0) return;
-      if (!confirm('Clear the entire batting order?')) return;
+      const ok = await showConfirm('Clear the entire batting order?', 'Clear');
+      if (!ok) return;
       lineup = [];
       currentBatterIdx = -1;
       saveLineup();
@@ -850,6 +1228,24 @@
       const pct = (e.clientX - rect.left) / rect.width;
       const total = getTotalDuration();
       seekTo(pct * total);
+    });
+
+    // Search modal
+    document.getElementById('search-close').addEventListener('click', closeSearchModal);
+    document.getElementById('search-modal-backdrop').addEventListener('click', closeSearchModal);
+    const searchInput = document.getElementById('search-input');
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      const query = searchInput.value.trim();
+      if (query.length < 2) {
+        document.getElementById('search-results').innerHTML = '<div class="search-empty">Type at least 2 characters</div>';
+        return;
+      }
+      document.getElementById('search-results').innerHTML = '<div class="search-empty">Searching...</div>';
+      searchDebounceTimer = setTimeout(async () => {
+        const tracks = await searchDeezer(query);
+        renderSearchResults(tracks);
+      }, 300);
     });
 
     // Now Playing fullscreen
@@ -934,6 +1330,8 @@
       npName.textContent = 'No batter selected';
       npNextBatter.innerHTML = '—';
       npCurrentLabel.textContent = '';
+      document.getElementById('np-song-line').classList.add('hidden');
+      applyAlbumBackground(null);
       if (!playbackPhase) {
         npProgressFill.style.width = '0%';
         npTimeCurrent.textContent = '0:00';
@@ -945,6 +1343,20 @@
     npCurrentLabel.textContent = 'At Bat';
     npNumber.textContent = '#' + activePlayer.number;
     npName.textContent = activePlayer.firstName + ' ' + activePlayer.lastName;
+
+    // Album art and song name in fullscreen
+    const dz = activePlayer._deezerTrack;
+    const npSongLine = document.getElementById('np-song-line');
+    if (dz && dz.art) {
+      const artUrl = dz.artLarge || dz.art;
+      npArt.src = dz.art; // use medium for inline
+      npSongName.textContent = `${dz.title} — ${dz.artist}`;
+      npSongLine.classList.remove('hidden');
+      applyAlbumBackground(artUrl);
+    } else {
+      npSongLine.classList.add('hidden');
+      applyAlbumBackground(null);
+    }
 
     if (!playbackPhase) {
       npProgressFill.style.width = '0%';
@@ -1095,7 +1507,7 @@
     if (!player.walkup) return;
 
     const startTime = player.walkup.startTime || 0;
-    const duration = player.walkup.duration || globalDuration;
+    const duration = getEffectiveWalkupDuration(player);
     const alreadyPlayed = walkupAudio.currentTime - startTime;
     const remaining = duration - alreadyPlayed;
     if (remaining <= 0) {
@@ -1203,6 +1615,8 @@
     playbackNumber.textContent = '';
     playbackName.textContent = 'No player selected';
     playbackStatus.textContent = '';
+    playbackArt.classList.add('hidden');
+    playbackSongName.classList.add('hidden');
     timeCurrent.textContent = '--:--';
     timeTotal.textContent = '--:--';
     progressFill.style.width = '0%';
@@ -1276,6 +1690,18 @@
     playbackStatus.textContent = 'At Bat';
     progressFill.style.width = '0%';
     timeCurrent.textContent = '0:00';
+
+    // Album art and song name in collapsed bar
+    const dz = player._deezerTrack;
+    if (dz && dz.art) {
+      playbackArt.src = dz.art;
+      playbackArt.classList.remove('hidden');
+      playbackSongName.textContent = `${dz.title} — ${dz.artist}`;
+      playbackSongName.classList.remove('hidden');
+    } else {
+      playbackArt.classList.add('hidden');
+      playbackSongName.classList.add('hidden');
+    }
   }
 
   function highlightPlaying(number) {
